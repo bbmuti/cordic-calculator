@@ -1,4 +1,6 @@
+import ast
 import math
+import operator
 import re
 
 # ===================== KÜRESEL HASSASİYET =====================
@@ -266,6 +268,8 @@ class MathFunctions:
         return 2 * z + k * math.log(2)
 
     def logtaban(self, v, base, iterations=PREC):
+        if base <= 0 or base == 1:
+            raise ValueError("Logaritma tabanı pozitif ve 1'den farklı olmalıdır.")
         return self.ln(v, iterations) / self.ln(base, iterations)
 
 # ===================== ÖLÇÜM HAVUZU =====================
@@ -322,7 +326,92 @@ def print_domain_help():
 """
     print(txt)
 
-# ===================== PARSE & EVAL =====================
+# ===================== GÜVENLİ İFADE AYRIŞTIRICI =====================
+class SafeExpressionEvaluator:
+    """Yalnızca izinli sayısal işlemleri ve fonksiyonları değerlendirir."""
+
+    MAX_EXPRESSION_LENGTH = 500
+    MAX_AST_NODES = 100
+    MAX_ABS_VALUE = 1e100
+    MAX_ABS_EXPONENT = 100
+
+    binary_operators = {
+        ast.Add: operator.add,
+        ast.Sub: operator.sub,
+        ast.Mult: operator.mul,
+        ast.Div: operator.truediv,
+        ast.Mod: operator.mod,
+        ast.Pow: operator.pow,
+    }
+    unary_operators = {
+        ast.UAdd: operator.pos,
+        ast.USub: operator.neg,
+    }
+
+    def __init__(self, allowed_names):
+        self.allowed_names = allowed_names
+
+    def evaluate(self, expression: str) -> float:
+        if not expression or len(expression) > self.MAX_EXPRESSION_LENGTH:
+            raise ValueError("İfade boş veya çok uzun.")
+        try:
+            tree = ast.parse(expression, mode="eval")
+        except SyntaxError as exc:
+            raise ValueError("Geçersiz ifade.") from exc
+        if sum(1 for _ in ast.walk(tree)) > self.MAX_AST_NODES:
+            raise ValueError("İfade çok karmaşık.")
+        return float(self._evaluate_node(tree.body))
+
+    def _evaluate_node(self, node):
+        if isinstance(node, ast.Constant):
+            if type(node.value) not in (int, float):
+                raise ValueError("Yalnızca sayısal sabitler kullanılabilir.")
+            return self._validate_number(node.value)
+
+        if isinstance(node, ast.Name):
+            value = self.allowed_names.get(node.id)
+            if value is None or callable(value):
+                raise ValueError(f"İzin verilmeyen ad: {node.id}")
+            return self._validate_number(value)
+
+        if isinstance(node, ast.UnaryOp) and type(node.op) in self.unary_operators:
+            result = self.unary_operators[type(node.op)](self._evaluate_node(node.operand))
+            return self._validate_number(result)
+
+        if isinstance(node, ast.BinOp) and type(node.op) in self.binary_operators:
+            left = self._evaluate_node(node.left)
+            right = self._evaluate_node(node.right)
+            if isinstance(node.op, ast.Pow) and abs(right) > self.MAX_ABS_EXPONENT:
+                raise ValueError("Üs değeri çok büyük.")
+            try:
+                result = self.binary_operators[type(node.op)](left, right)
+            except (ArithmeticError, OverflowError) as exc:
+                raise ValueError("İşlem hesaplanamadı.") from exc
+            return self._validate_number(result)
+
+        if isinstance(node, ast.Call):
+            if not isinstance(node.func, ast.Name) or node.keywords:
+                raise ValueError("Yalnızca izinli fonksiyon çağrıları kullanılabilir.")
+            function = self.allowed_names.get(node.func.id)
+            if not callable(function):
+                raise ValueError(f"İzin verilmeyen fonksiyon: {node.func.id}")
+            arguments = [self._evaluate_node(argument) for argument in node.args]
+            try:
+                return self._validate_number(function(*arguments))
+            except TypeError as exc:
+                raise ValueError("Fonksiyon için geçersiz sayıda argüman verildi.") from exc
+
+        raise ValueError("İfadede izin verilmeyen bir yapı var.")
+
+    def _validate_number(self, value):
+        if type(value) not in (int, float) or not math.isfinite(value):
+            raise ValueError("Sonuç sonlu bir sayı olmalıdır.")
+        if abs(value) > self.MAX_ABS_VALUE:
+            raise ValueError("Sayısal değer çok büyük.")
+        return value
+
+
+# ===================== PARSE =====================
 def auto_insert_parentheses(expr: str) -> str:
     pattern = (
         r'(?<![a-zA-Z0-9_])'
@@ -336,13 +425,9 @@ def auto_insert_parentheses(expr: str) -> str:
     )
     return re.sub(pattern, r'\g<func>(\g<val>)', expr)
 
-def parse_angle(expr: str, mode: str) -> float:
-    if mode == "rad":
-        return eval(expr, {"__builtins__": {}}, {"pi": math.pi})
-    elif mode == "deg":
-        return math.radians(float(eval(expr, {"__builtins__": {}}, {"pi": math.pi})))
-    else:
-        return float(expr)
+def parse_angle(value: float, mode: str) -> float:
+    value = float(value)
+    return math.radians(value) if mode == "deg" else value
 
 def eval_expression(expr: str, angle_mode: str,
                     trig: TrigonometricFunction,
@@ -351,7 +436,7 @@ def eval_expression(expr: str, angle_mode: str,
     expr = auto_insert_parentheses(expr.lower().replace("^", "**"))
 
     def trig_wrap(fname):
-        return lambda x: getattr(trig, fname)(parse_angle(str(x), angle_mode), PREC)
+        return lambda x: getattr(trig, fname)(parse_angle(x, angle_mode), PREC)
 
     def arc_wrap(fname):
         def f(x):
@@ -386,7 +471,7 @@ def eval_expression(expr: str, angle_mode: str,
         "pi": math.pi, "e": math.e,
     }
 
-    return eval(expr, {"__builtins__": {}}, allowed)
+    return SafeExpressionEvaluator(allowed).evaluate(expr)
 
 # ===================== ANA PROGRAM =====================
 if __name__ == "__main__":
