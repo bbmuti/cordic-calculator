@@ -1,6 +1,29 @@
 # CORDIC Hesap Makinesi
 
-Trigonometrik, ters trigonometrik, hiperbolik ve logaritmik fonksiyonları CORDIC algoritmasıyla hesaplayan komut satırı uygulamasıdır. Proje, çarpma yoğun klasik yöntemlere alternatif olarak kaydırma ve toplama tabanlı sayısal hesaplama yaklaşımını gösterir.
+Trigonometrik, ters trigonometrik, hiperbolik ve logaritmik fonksiyonları CORDIC algoritmasıyla hesaplayan komut satırı uygulamasıdır. Proje, çarpma yoğun klasik yöntemlere alternatif olarak iteratif kaydırma ve toplama tabanlı sayısal hesaplama yaklaşımını gösterir.
+
+## CORDIC nasıl çalışır?
+
+CORDIC (COordinate Rotation DIgital Computer), bir vektörü önceden belirlenmiş küçük açılarla iteratif olarak döndürerek trigonometrik ve ilişkili fonksiyonları hesaplar. Uygun biçimde düzenlendiğinde her iterasyondaki `2^-i` katsayısı bit kaydırma ile temsil edilebildiği için yaklaşım özellikle donanım ve sabit noktalı aritmetik açısından önemlidir.
+
+```mermaid
+flowchart LR
+    A[Girdi] --> B[Açı / değer normalizasyonu]
+    B --> C[Başlangıç vektörü]
+    C --> D[İteratif CORDIC rotasyonları]
+    D --> E[Ölçek düzeltme]
+    E --> F[sin / cos / ilişkili sonuç]
+```
+
+Temel dairesel rotasyon adımı kavramsal olarak şöyledir:
+
+```text
+x(i+1) = x(i) - d(i) * y(i) * 2^-i
+y(i+1) = y(i) + d(i) * x(i) * 2^-i
+z(i+1) = z(i) - d(i) * atan(2^-i)
+```
+
+Burada `d(i)` dönüş yönünü belirler. İterasyon sayısı arttıkça yaklaşık sonuç genellikle daha hassas hale gelir; bunun karşılığında hesaplama maliyeti yükselir.
 
 ## Özellikler
 
@@ -15,14 +38,7 @@ Trigonometrik, ters trigonometrik, hiperbolik ve logaritmik fonksiyonları CORDI
 
 ## Güvenli ifade değerlendirme
 
-Kullanıcı girdileri Python `eval` fonksiyonuna gönderilmez. İfadeler AST ile ayrıştırılır ve yalnızca aşağıdakilere izin verilir:
-
-- sayısal sabitler;
-- `+`, `-`, `*`, `/`, `%` ve `^` işlemleri;
-- `pi` ve `e` sabitleri;
-- bu README'de listelenen matematik fonksiyonları.
-
-Dosya erişimi, modül yükleme, özellik erişimi, koleksiyonlar, lambda ifadeleri ve anahtar kelimeli çağrılar reddedilir. Çok uzun, aşırı karmaşık veya kaynak tüketimine yol açabilecek büyük üs içeren ifadeler de sınırlandırılır.
+Kullanıcı girdileri Python `eval` fonksiyonuna gönderilmez. İfadeler AST ile ayrıştırılır ve yalnızca izin verilen matematiksel yapıların çalışmasına izin verilir. Sayısal sabitler, temel aritmetik işlemleri, `pi`/`e` sabitleri ve desteklenen matematik fonksiyonları kabul edilir. Dosya erişimi, modül yükleme, özellik erişimi, koleksiyonlar, lambda ifadeleri ve anahtar kelimeli çağrılar reddedilir. Çok uzun, aşırı karmaşık veya kaynak tüketimine yol açabilecek büyük üs içeren ifadeler de sınırlandırılır.
 
 ## Çalıştırma
 
@@ -77,6 +93,6 @@ python -m unittest -v
 
 Testler temel aritmetik ve fonksiyon sonuçlarının yanında kod çalıştırma, özellik erişimi, indeksleme, lambda ve aşırı büyük üs girişlerinin reddedildiğini de doğrular.
 
-## Sınırlılıklar
+## Karmaşıklık ve sınırlılıklar
 
-`PREC` değeri yükseldikçe doğruluk genellikle artar, fakat hesaplama maliyeti de yükselir. Sıfıra çok yakın paydalara sahip `tan`, `sec`, `cot` ve `csc` işlemleri sayısal kararsızlığı önlemek amacıyla hata üretir.
+Tek bir CORDIC hesaplamasının iterasyon maliyeti seçilen hassasiyet `n` için yaklaşık `O(n)`'dir. `PREC` değeri yükseldikçe doğruluk genellikle artar, fakat hesaplama maliyeti de yükselir. Sıfıra çok yakın paydalara sahip `tan`, `sec`, `cot` ve `csc` işlemleri sayısal kararsızlığı önlemek amacıyla hata üretir.
